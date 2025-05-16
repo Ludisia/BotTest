@@ -25,9 +25,9 @@ dp = Dispatcher(storage=MemoryStorage())
 
 # Включение роутеров
 dp.include_router(common.router)
+dp.include_router(admin.router)
 dp.include_router(laundry.router)
 dp.include_router(restroom.router)
-dp.include_router(admin.router)
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)

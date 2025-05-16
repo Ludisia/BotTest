@@ -3,6 +3,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from datetime import datetime
+import logging
 
 from database import (
     get_all_machines,
@@ -16,32 +17,31 @@ from database import (
 from utils import is_valid_time, format_date
 
 router = Router()
+logger = logging.getLogger(__name__)
 
-# Проверка прав администратора для всех обработчиков
-router.message.filter(F.from_user.id.is_(lambda x: is_admin(x)))
-router.callback_query.filter(F.from_user.id.is_(lambda x: is_admin(x)))
+@router.message(F.text == "Администрирование")
+async def handle_admin(message: types.Message):
+    """Основной обработчик кнопки администрирования"""
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ У вас нет прав администратора")
+        return
 
-
-@router.message(Command("admin"))
-async def admin_panel(message: types.Message):
-    """Главное меню администратора"""
     builder = ReplyKeyboardBuilder()
     buttons = [
         "Управление машинками",
         "Просмотр записей",
         "Настройки уведомлений",
-        "Статистика",
+        "Настройки расписания",
         "Главное меню"
     ]
     for button in buttons:
         builder.add(types.KeyboardButton(text=button))
     builder.adjust(2)
 
-    await message.reply(
+    await message.answer(
         "⚙️ Панель администратора:",
         reply_markup=builder.as_markup(resize_keyboard=True)
     )
-
 
 @router.message(F.text == "Управление машинками")
 async def manage_machines(message: types.Message):
@@ -57,7 +57,7 @@ async def manage_machines(message: types.Message):
         )
     builder.adjust(1)
 
-    await message.reply(
+    await message.answer(
         "Текущий статус машинок:\n"
         "✅ - доступна\n"
         "❌ - не доступна\n"
@@ -65,14 +65,13 @@ async def manage_machines(message: types.Message):
         reply_markup=builder.as_markup()
     )
 
-
 @router.callback_query(F.data.startswith("toggle_machine_"))
 async def toggle_machine_status(callback: types.CallbackQuery):
     """Переключение статуса машинки"""
     machine_number = int(callback.data.split('_')[2])
+    machines = get_all_machines()
     current_status = next(
-        (m['status'] for m in get_all_machines()
-         if m['machine_number'] == machine_number),
+        (m['status'] for m in machines if m['machine_number'] == machine_number),
         'active'
     )
     new_status = 'inactive' if current_status == 'active' else 'active'
@@ -83,23 +82,21 @@ async def toggle_machine_status(callback: types.CallbackQuery):
     else:
         await callback.answer("❌ Ошибка изменения статуса")
 
-
 @router.message(F.text == "Просмотр записей")
 async def view_bookings_menu(message: types.Message):
     """Меню просмотра записей"""
     builder = InlineKeyboardBuilder()
     builder.button(text="Прачечная", callback_data="view_bookings_laundry")
     builder.button(text="Комната отдыха", callback_data="view_bookings_restroom")
-    await message.reply(
+    await message.answer(
         "Выберите тип записей для просмотра:",
         reply_markup=builder.as_markup()
     )
 
-
 @router.callback_query(F.data.startswith("view_bookings_"))
 async def view_bookings(callback: types.CallbackQuery):
     """Просмотр активных записей"""
-    booking_type = callback.data.split('_')[2]  # laundry или restroom
+    booking_type = callback.data.split('_')[2]
     bookings = get_active_bookings(booking_type)
 
     response = (
@@ -132,9 +129,8 @@ async def view_bookings(callback: types.CallbackQuery):
     )
     await callback.answer()
 
-
 @router.message(F.text == "Настройки уведомлений")
-async def notification_settings(message: types.Message, state: FSMContext):
+async def notification_settings(message: types.Message):
     """Меню настроек уведомлений"""
     settings = {
         'laundry_notification_minutes': "Уведомление перед стиркой (мин)",
@@ -151,11 +147,10 @@ async def notification_settings(message: types.Message, state: FSMContext):
         )
     builder.adjust(1)
 
-    await message.reply(
+    await message.answer(
         "⚙️ Текущие настройки уведомлений:",
         reply_markup=builder.as_markup()
     )
-
 
 @router.callback_query(F.data.startswith("edit_setting_"))
 async def edit_setting(callback: types.CallbackQuery, state: FSMContext):
@@ -169,7 +164,6 @@ async def edit_setting(callback: types.CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
-
 @router.message(F.text.regexp(r'^\d+$'))
 async def save_setting(message: types.Message, state: FSMContext):
     """Сохранение новой настройки"""
@@ -181,26 +175,11 @@ async def save_setting(message: types.Message, state: FSMContext):
     new_value = message.text
 
     if update_system_setting(setting_name, new_value):
-        await message.reply(f"✅ Настройка '{setting_name}' обновлена: {new_value}")
+        await message.answer(f"✅ Настройка '{setting_name}' обновлена: {new_value}")
     else:
-        await message.reply("❌ Ошибка при сохранении настройки")
+        await message.answer("❌ Ошибка при сохранении настройки")
 
     await state.clear()
-
-
-@router.message(F.text == "Статистика")
-async def show_stats(message: types.Message):
-    """Показать статистику использования"""
-    # Здесь можно реализовать сбор и отображение статистики
-    await message.reply("📊 Статистика будет доступна в следующих версиях")
-
-
-@router.callback_query(F.data == "admin_back")
-async def admin_back(callback: types.CallbackQuery):
-    """Возврат в главное меню администратора"""
-    await admin_panel(callback.message)
-    await callback.answer()
-
 
 @router.message(F.text == "Настройки расписания")
 async def schedule_settings_menu(message: types.Message):
@@ -221,8 +200,10 @@ async def schedule_settings_menu(message: types.Message):
         builder.button(text=text, callback_data=callback)
     builder.adjust(1)
 
-    await message.answer("⚙️ Настройки расписания прачечной:", reply_markup=builder.as_markup())
-
+    await message.answer(
+        "⚙️ Настройки расписания прачечной:",
+        reply_markup=builder.as_markup()
+    )
 
 @router.callback_query(F.data.startswith("set_"))
 async def ask_for_new_time(callback: types.CallbackQuery, state: FSMContext):
@@ -239,9 +220,10 @@ async def ask_for_new_time(callback: types.CallbackQuery, state: FSMContext):
 
     setting_name = setting_map[callback.data]
     await state.update_data(editing_setting=setting_name)
-    await callback.message.answer(f"Введите новое время для {setting_name} (формат HH:MM):")
+    await callback.message.answer(
+        f"Введите новое время для {setting_name} (формат HH:MM):"
+    )
     await callback.answer()
-
 
 @router.message(F.text.regexp(r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'))
 async def save_schedule_setting(message: types.Message, state: FSMContext):
@@ -254,12 +236,11 @@ async def save_schedule_setting(message: types.Message, state: FSMContext):
     time_value = message.text
 
     if update_schedule_settings(setting_name, time_value):
-        await message.reply(f"✅ Настройка '{setting_name}' обновлена: {time_value}")
+        await message.answer(f"✅ Настройка '{setting_name}' обновлена: {time_value}")
     else:
-        await message.reply("❌ Ошибка при сохранении настройки")
+        await message.answer("❌ Ошибка при сохранении настройки")
 
     await state.clear()
-
 
 @router.callback_query(F.data == "reset_schedule_settings")
 async def reset_schedule_settings(callback: types.CallbackQuery):
@@ -274,17 +255,14 @@ async def reset_schedule_settings(callback: types.CallbackQuery):
         'wednesday_break_end': '13:00'
     }
 
-    with closing(get_db_connection()) as conn:
-        with conn:
-            cursor = conn.cursor()
-            try:
-                for name, value in default_settings.items():
-                    cursor.execute('''
-                        INSERT OR REPLACE INTO schedule_settings 
-                        (setting_name, setting_value) VALUES (?, ?)
-                    ''', (name, value))
-                await callback.answer("✅ Настройки сброшены к значениям по умолчанию")
-            except sqlite3.Error:
-                await callback.answer("❌ Ошибка при сбросе настроек")
+    for name, value in default_settings.items():
+        update_schedule_settings(name, value)
 
+    await callback.answer("✅ Настройки сброшены к значениям по умолчанию")
     await callback.message.edit_reply_markup()
+
+@router.callback_query(F.data == "admin_back")
+async def admin_back(callback: types.CallbackQuery):
+    """Возврат в главное меню администратора"""
+    await handle_admin(callback.message)
+    await callback.answer()

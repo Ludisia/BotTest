@@ -9,11 +9,8 @@ router = Router()
 
 @router.message(Command("start"))
 async def send_welcome(message: types.Message):
-    """Обработчик команды /start"""
     user_id = message.from_user.id
     username = message.from_user.username
-
-    # Используем готовую функцию из database.py
     create_or_update_user(user_id, username)
 
     builder = ReplyKeyboardBuilder()
@@ -23,10 +20,11 @@ async def send_welcome(message: types.Message):
     )
     builder.row(types.KeyboardButton(text="Мои записи"))
 
+    # Проверка прав через функцию is_admin
     if is_admin(user_id):
         builder.row(types.KeyboardButton(text="Администрирование"))
 
-    await message.reply(
+    await message.answer(
         "Привет! Я бот для записи в прачечную и комнату отдыха общежития №6 НГУ.\n"
         "Выберите действие:",
         reply_markup=builder.as_markup(resize_keyboard=True)
