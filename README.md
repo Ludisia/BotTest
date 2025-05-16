@@ -23,6 +23,7 @@
    
 ## Настройка администратора
 
+Через терминал:
 1. Подключитесь к базе данных:
    ```bash
    sqlite3 dorm_bot.db
@@ -34,3 +35,15 @@
 3. Выйдите из SQLite:
     ```sql
    .quit
+   
+Через код:
+```python
+import sqlite3
+
+conn = sqlite3.connect('dorm_bot.db')
+cursor = conn.cursor()
+
+cursor.execute("UPDATE users SET is_admin = 1 WHERE user_id = ?", (ВАШ_ID,))
+conn.commit()
+
+conn.close()
