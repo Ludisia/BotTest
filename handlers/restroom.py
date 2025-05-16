@@ -4,6 +4,9 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from datetime import datetime
 from states import RestroomStates
+from contextlib import closing
+from datetime import datetime
+from database import get_db_connection, get_current_week, is_admin
 
 from database import (
     get_available_restroom_slots,
@@ -210,9 +213,80 @@ async def process_restroom_cancel(callback: types.CallbackQuery):
     await callback.answer()
 
 
-# Административные команды
 @router.message(Command("restroom_stats"))
 async def show_restroom_stats(message: types.Message):
     """Показывает статистику по комнате отдыха (только для админов)"""
-    # Реализация аналогична оригинальному коду
-    pass
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ Эта команда доступна только администраторам")
+        return
+
+    with closing(get_db_connection()) as conn:
+        cursor = conn.cursor()
+
+        # Статистика за текущую неделю
+        week, year = get_current_week()
+        cursor.execute('''
+            SELECT COUNT(*), SUM(duration) 
+            FROM restroom_bookings 
+            WHERE status = 'active' 
+            AND strftime('%W', booking_date) = ? 
+            AND strftime('%Y', booking_date) = ?
+        ''', (str(week), str(year)))
+        weekly_count, weekly_minutes = cursor.fetchone()
+        weekly_minutes = weekly_minutes or 0
+
+        # Статистика за текущий месяц
+        cursor.execute('''
+            SELECT COUNT(*), SUM(duration) 
+            FROM restroom_bookings 
+            WHERE status = 'active' 
+            AND strftime('%m', booking_date) = strftime('%m', 'now') 
+            AND strftime('%Y', booking_date) = strftime('%Y', 'now')
+        ''')
+        monthly_count, monthly_minutes = cursor.fetchone()
+        monthly_minutes = monthly_minutes or 0
+
+        # Самые активные пользователи
+        cursor.execute('''
+            SELECT user_id, COUNT(*) as bookings_count, SUM(duration) as total_minutes
+            FROM restroom_bookings
+            WHERE status = 'active'
+            GROUP BY user_id
+            ORDER BY bookings_count DESC
+            LIMIT 5
+        ''')
+        top_users = cursor.fetchall()
+
+    # Формируем ответ
+    response = (
+        "📊 Статистика комнаты отдыха:\n\n"
+        f"📅 За текущую неделю:\n"
+        f"• Количество записей: {weekly_count}\n"
+        f"• Суммарное время: {weekly_minutes} мин. ({weekly_minutes // 60} ч. {weekly_minutes % 60} мин.)\n\n"
+        f"📅 За текущий месяц:\n"
+        f"• Количество записей: {monthly_count}\n"
+        f"• Суммарное время: {monthly_minutes} мин. ({monthly_minutes // 60} ч. {monthly_minutes % 60} мин.)\n\n"
+        "🏆 Топ пользователей:\n"
+    )
+
+    for i, (user_id, count, minutes) in enumerate(top_users, 1):
+        response += (
+            f"{i}. ID {user_id}: {count} записей, {minutes} мин.\n"
+        )
+
+    # Добавляем кнопку обновления статистики
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔄 Обновить", callback_data="refresh_restroom_stats")
+
+    await message.answer(
+        response,
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "refresh_restroom_stats")
+async def refresh_stats(callback: types.CallbackQuery):
+    """Обновление статистики"""
+    await show_restroom_stats(callback.message)
+    await callback.answer("Статистика обновлена")

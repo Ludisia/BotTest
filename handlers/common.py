@@ -75,6 +75,26 @@ async def show_my_bookings(message: types.Message):
     await message.reply(response, reply_markup=builder.as_markup())
 
 
+@router.callback_query(F.data == "main_menu")
+async def return_to_main_menu(callback: types.CallbackQuery):
+    """Обработчик кнопки 'Главное меню'"""
+    builder = ReplyKeyboardBuilder()
+    builder.row(
+        types.KeyboardButton(text="Записаться в прачечную"),
+        types.KeyboardButton(text="Записаться в комнату отдыха")
+    )
+    builder.row(types.KeyboardButton(text="Мои записи"))
+
+    if is_admin(callback.from_user.id):
+        builder.row(types.KeyboardButton(text="Администрирование"))
+
+    await callback.message.answer(
+        "Главное меню:",
+        reply_markup=builder.as_markup(resize_keyboard=True)
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "my_bookings")
 async def show_my_bookings_menu(callback: types.CallbackQuery):
     """Обновленное меню записей"""

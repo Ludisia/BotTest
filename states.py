@@ -6,6 +6,7 @@ class LaundryStates(StatesGroup):
     choosing_time = State()
 
 class RestroomStates(StatesGroup):
+    viewing_stats = State()
     choosing_date = State()
     choosing_start = State()
     choosing_duration = State()

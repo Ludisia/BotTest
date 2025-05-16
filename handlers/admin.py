@@ -264,5 +264,39 @@ async def reset_schedule_settings(callback: types.CallbackQuery):
 @router.callback_query(F.data == "admin_back")
 async def admin_back(callback: types.CallbackQuery):
     """Возврат в главное меню администратора"""
-    await handle_admin(callback.message)
+    builder = ReplyKeyboardBuilder()
+    buttons = [
+        "Управление машинками",
+        "Просмотр записей",
+        "Настройки уведомлений",
+        "Настройки расписания",
+        "Главное меню"
+    ]
+    for button in buttons:
+        builder.add(types.KeyboardButton(text=button))
+    builder.adjust(2)
+
+    await callback.message.answer(
+        "⚙️ Панель администратора:",
+        reply_markup=builder.as_markup(resize_keyboard=True)
+    )
     await callback.answer()
+
+
+@router.message(F.text == "Главное меню")
+async def admin_to_main_menu(message: types.Message):
+    """Возврат из админки в главное меню"""
+    builder = ReplyKeyboardBuilder()
+    builder.row(
+        types.KeyboardButton(text="Записаться в прачечную"),
+        types.KeyboardButton(text="Записаться в комнату отдыха")
+    )
+    builder.row(types.KeyboardButton(text="Мои записи"))
+
+    if is_admin(message.from_user.id):
+        builder.row(types.KeyboardButton(text="Администрирование"))
+
+    await message.answer(
+        "Главное меню:",
+        reply_markup=builder.as_markup(resize_keyboard=True)
+    )
